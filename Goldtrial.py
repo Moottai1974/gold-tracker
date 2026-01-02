@@ -9,7 +9,7 @@ def check_password():
         st.title("🔒 Private Business Portal")
         password = st.text_input("Enter Access PIN", type="password")
         if st.button("Unlock"):
-            if password == "1234":  # <--- CHANGE YOUR PIN HERE
+            if password == "131008":  # <--- CHANGE YOUR PIN HERE
                 st.session_state["password_correct"] = True
                 st.rerun()
             else:
@@ -90,4 +90,5 @@ if not display_df.empty:
         st.balloons()
         st.success(f"🔥 {len(matured)} items are ready to sell for a profit!")
 else:
+
     st.info("No data yet. Use the sidebar to add your first gold bar.")
