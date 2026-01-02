@@ -11,7 +11,7 @@ def check_password():
         st.title("🔒 Private Business Portal")
         pin = st.text_input("Enter Access PIN", type="password")
         if st.button("Unlock"):
-            if pin == "1234": # Change your PIN here
+            if pin == "131008": # Change your PIN here
                 st.session_state["password_correct"] = True
                 st.rerun()
             else:
