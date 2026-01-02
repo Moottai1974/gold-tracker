@@ -1,94 +1,83 @@
 import streamlit as st
 import pandas as pd
 import datetime
-from streamlit_gsheets import GSheetsConnection
+import os
 
-# --- 1. PASSWORD PROTECTION ---
+# --- 1. SETTINGS & PASSWORD ---
+st.set_page_config(page_title="Gold Tracker", layout="wide")
+
 def check_password():
     if "password_correct" not in st.session_state:
-        st.title("🔒 Private Business Portal")
-        password = st.text_input("Enter Access PIN", type="password")
-        if st.button("Unlock"):
-            if password == "131008":  # <--- CHANGE YOUR PIN HERE
+        st.title("🔒 Gold Business Login")
+        pin = st.text_input("Enter PIN", type="password")
+        if st.button("Login"):
+            if pin == "1234": # <--- You can change this PIN
                 st.session_state["password_correct"] = True
                 st.rerun()
             else:
-                st.error("❌ Invalid PIN")
+                st.error("Incorrect PIN")
         return False
     return True
 
 if not check_password():
     st.stop()
 
-# --- 2. CONFIGURATION & DATA ---
-st.set_page_config(page_title="Gold Tracker Pro", layout="wide")
-st.title("🏆 Gold Investment Dashboard")
-
-# Connect to Google Sheets (This keeps data alive on your phone!)
-# Note: You will need to set up the connection in your Streamlit dashboard later
-conn = st.connection("gsheets", type=GSheetsConnection)
+# --- 2. DATA HANDLING (Saves to a file named 'data.csv') ---
+CSV_FILE = "data.csv"
 
 def load_data():
-    try:
-        return conn.read(worksheet="Sheet1")
-    except:
-        return pd.DataFrame(columns=["Purchase Date", "Grams", "Total Cost"])
+    if os.path.exists(CSV_FILE):
+        return pd.read_csv(CSV_FILE)
+    return pd.DataFrame(columns=["Date", "Grams", "Cost"])
 
 df = load_data()
 
-# --- 3. CALCULATIONS ---
-def calculate_metrics(df_input, current_price):
-    if df_input.empty:
-        return pd.DataFrame()
-    
-    temp_df = df_input.copy()
-    temp_df['Purchase Date'] = pd.to_datetime(temp_df['Purchase Date'])
-    temp_df['Days'] = (pd.Timestamp.now() - temp_df['Purchase Date']).dt.days
-    
-    # 10% Interest Calculation
-    temp_df['Interest'] = (temp_df['Total Cost'] * 0.10 / 365) * temp_df['Days']
-    temp_df['Break-even'] = temp_df['Total Cost'] + temp_df['Interest']
-    
-    # Profit Calculation
-    temp_df['Value Now'] = temp_df['Grams'] * current_price
-    temp_df['Profit'] = temp_df['Value Now'] - temp_df['Break-even']
-    temp_df['Status'] = temp_df['Profit'].apply(lambda x: "✅ SELL" if x > 0 else "❌ HOLD")
-    
-    return temp_df
-
-# --- 4. INPUT SIDEBAR ---
+# --- 3. SIDEBAR INPUTS ---
 with st.sidebar:
-    st.header("➕ Add New Purchase")
-    with st.form("add_form", clear_on_submit=True):
-        d = st.date_input("Date", datetime.date.today())
-        g = st.number_input("Grams", min_value=0.0)
-        c = st.number_input("Total Cost ($)", min_value=0.0)
-        
-        if st.form_submit_button("Save to Cloud"):
-            new_row = pd.DataFrame([[str(d), g, c]], columns=["Purchase Date", "Grams", "Total Cost"])
-            updated_df = pd.concat([df, new_row], ignore_index=True)
-            conn.update(worksheet="Sheet1", data=updated_df)
-            st.success("Synced with Cloud!")
+    st.header("➕ New Entry")
+    with st.form("input_form", clear_on_submit=True):
+        d = st.date_input("Purchase Date", datetime.date.today())
+        g = st.number_input("Grams", min_value=0.0, step=1.0)
+        c = st.number_input("Total Cost ($)", min_value=0.0, step=10.0)
+        if st.form_submit_button("Save Entry"):
+            new_row = pd.DataFrame([[str(d), g, c]], columns=["Date", "Grams", "Cost"])
+            df = pd.concat([df, new_row], ignore_index=True)
+            df.to_csv(CSV_FILE, index=False)
+            st.success("Saved!")
             st.rerun()
-
-    if st.button("🗑️ Clear All Records"):
-        conn.update(worksheet="Sheet1", data=pd.DataFrame(columns=["Purchase Date", "Grams", "Total Cost"]))
-        st.rerun()
-
-# --- 5. MAIN DISPLAY ---
-price = st.number_input("Current Market Price (SGD/g)", value=193.0)
-display_df = calculate_metrics(df, price)
-
-if not display_df.empty:
-    st.subheader("📊 Your Portfolio")
-    # Clean display for Mobile
-    st.dataframe(display_df[['Purchase Date', 'Grams', 'Total Cost', 'Profit', 'Status']], width='stretch')
     
-    # Ready to Sell alert
-    matured = display_df[display_df['Profit'] > 0]
-    if not matured.empty:
-        st.balloons()
-        st.success(f"🔥 {len(matured)} items are ready to sell for a profit!")
-else:
+    st.divider()
+    # BACKUP BUTTON (Very important for Plan B)
+    st.header("💾 Backup")
+    csv_bytes = df.to_csv(index=False).encode('utf-8')
+    st.download_button("Download Excel/CSV", data=csv_bytes, file_name="gold_data_backup.csv", mime="text/csv")
 
-    st.info("No data yet. Use the sidebar to add your first gold bar.")
+# --- 4. MAIN DASHBOARD ---
+st.title("🏆 Gold Portfolio")
+m_price = st.number_input("Current Market Price ($/g)", value=230.0)
+
+if not df.empty:
+    # Calculations
+    temp_df = df.copy()
+    temp_df['Date'] = pd.to_datetime(temp_df['Date'])
+    temp_df['Days'] = (pd.Timestamp.now() - temp_df['Date']).dt.days
+    temp_df['Target(10%)'] = temp_df['Cost'] + (temp_df['Cost'] * 0.10 / 365 * temp_df['Days'])
+    temp_df['CurrentValue'] = temp_df['Grams'] * m_price
+    temp_df['Profit'] = temp_df['CurrentValue'] - temp_df['Target(10%)']
+    
+    # Display each item clearly for Mobile
+    for index, row in temp_df.iterrows():
+        with st.container(border=True):
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                st.write(f"**Date:** {row['Date'].date()} | **Weight:** {row['Grams']}g")
+                st.write(f"**Profit:** ${row['Profit']:,.2f}")
+                status_color = "green" if row['Profit'] > 0 else "red"
+                st.markdown(f"Status: :{status_color}[{'✅ READY TO SELL' if row['Profit'] > 0 else '❌ HOLD'}]")
+            with col2:
+                if st.button("🗑️", key=f"del_{index}"):
+                    df = df.drop(index)
+                    df.to_csv(CSV_FILE, index=False)
+                    st.rerun()
+else:
+    st.info("No records yet. Add your first purchase in the sidebar.")
